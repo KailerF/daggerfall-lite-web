@@ -1,0 +1,1221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daggerfall Lite: Dungeon Delve</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Times New Roman', serif; user-select: none; }
+        #game-container { position: relative; width: 100vw; height: 100vh; }
+        
+        /* --- UI LAYOUT --- */
+        #ui-layer {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        /* HUD Bars */
+        .hud-bar-container {
+            position: absolute;
+            bottom: 30px;
+            left: 30px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            background: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAIklEQVQIW2NkQAKrVq36zwjjgzjIYvz48f9BHGQxXKD8/HwAfXgKrSpGMdAAAAAASUVORK5CYII='); /* Pattern */
+            background-color: #222;
+            padding: 15px;
+            border: 3px ridge #cba136; /* Gold Ridge */
+            box-shadow: 5px 5px 15px rgba(0,0,0,0.8);
+        }
+        .bar-wrap { 
+            width: 220px; height: 18px; 
+            background: #111; border: 1px solid #444; 
+            position: relative; 
+            box-shadow: inset 2px 2px 5px rgba(0,0,0,0.8);
+        }
+        .bar-fill { height: 100%; width: 100%; transition: width 0.2s; }
+        .hp { background: linear-gradient(to right, #800, #d00); }
+        .stamina { background: linear-gradient(to right, #005000, #00a000); }
+        .bar-label { 
+            position: absolute; left: 50%; top: 50%; 
+            transform: translate(-50%, -50%);
+            font-size: 12px; color: #fff; 
+            text-shadow: 1px 1px 0 #000; 
+            font-weight: bold; letter-spacing: 1px;
+        }
+
+        /* Top Info Bar */
+        #top-bar {
+            display: flex;
+            justify-content: space-between;
+            padding: 20px 40px;
+            color: #d4c7a5;
+            text-shadow: 2px 2px 0 #000;
+            font-size: 24px;
+            font-variant: small-caps;
+        }
+
+        /* Minimap */
+        #minimap-container {
+            position: absolute;
+            bottom: 30px;
+            right: 30px;
+            width: 150px;
+            height: 150px;
+            border: 3px ridge #cba136;
+            background: #000;
+            overflow: hidden;
+            border-radius: 2px;
+        }
+        #minimap { width: 100%; height: 100%; image-rendering: pixelated; }
+
+        /* Interaction Prompt */
+        #interaction-prompt {
+            position: absolute;
+            top: 60%; left: 50%;
+            transform: translateX(-50%);
+            color: #ffd700;
+            font-size: 20px;
+            text-shadow: 1px 1px 2px #000;
+            display: none;
+        }
+
+        /* Weapon Overlay */
+        #weapon-container {
+            position: absolute;
+            bottom: -100px; /* Moved down slightly so handle is at bottom */
+            right: 5%;
+            width: 600px; /* Increased size */
+            height: 600px;
+            transform-origin: 70% 90%; /* Pivot from handle */
+            pointer-events: none;
+            transition: transform 0.1s cubic-bezier(0.175, 0.885, 0.32, 1.275); /* Bouncy transition */
+        }
+        #weapon-img {
+            width: 100%;
+            height: 100%;
+            filter: drop-shadow(10px 10px 20px rgba(0,0,0,0.8));
+        }
+
+        /* Crosshair */
+        #crosshair {
+            position: absolute;
+            top: 50%; left: 50%;
+            width: 6px; height: 6px;
+            background: rgba(255, 255, 255, 0.8);
+            transform: translate(-50%, -50%) rotate(45deg);
+            border: 1px solid #000;
+            box-shadow: 0 0 4px #000;
+        }
+
+        /* Messages */
+        #message-log {
+            position: absolute;
+            top: 80px;
+            left: 30px;
+            width: 350px;
+            height: 200px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column-reverse;
+            font-size: 18px;
+            color: #fff;
+            text-shadow: 1px 1px 0 #000;
+            pointer-events: none;
+            font-style: italic;
+        }
+        .log-entry { margin-bottom: 6px; opacity: 0.9; animation: fadeOut 5s forwards; }
+        @keyframes fadeOut { 0% { opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; } }
+        
+        /* COMBAT TEXT */
+        .parry-text {
+            color: #ffd700;
+            font-weight: bold;
+            font-size: 24px;
+            text-shadow: 0 0 5px #fff;
+        }
+
+        /* SCREENS */
+        .screen-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAIklEQVQIW2NkQAKrVq36zwjjgzjIYvz48f9BHGQxXKD8/HwAfXgKrSpGMdAAAAAASUVORK5CYII='), #111;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: #d4c7a5;
+            z-index: 10;
+            pointer-events: auto;
+            border: 20px solid #1a1a1a;
+            box-sizing: border-box;
+        }
+        #char-screen, #pause-screen, #shop-screen { display: none; }
+        
+        h1 { 
+            font-size: 5rem; margin: 0 0 30px 0; color: #cba136; 
+            text-transform: uppercase; letter-spacing: 8px; 
+            text-shadow: 4px 4px 0px #000, 0 0 20px rgba(203, 161, 54, 0.5); 
+            font-variant: small-caps;
+        }
+        h2 { color: #cba136; border-bottom: 2px solid #554d38; padding-bottom: 10px; margin-bottom: 20px; font-size: 3rem; }
+        p { font-size: 1.3rem; max-width: 600px; text-align: center; line-height: 1.6; color: #aaa; }
+        
+        .btn {
+            margin-top: 20px;
+            padding: 15px 50px;
+            font-size: 1.8rem;
+            background: #2b2b2b;
+            color: #d4c7a5;
+            border: 3px ridge #cba136;
+            cursor: pointer;
+            font-family: 'Times New Roman', serif;
+            font-variant: small-caps;
+            transition: all 0.2s;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+        }
+        .btn:hover { background: #cba136; color: #111; transform: scale(1.05); }
+
+        .class-select { display: flex; gap: 20px; margin-bottom: 30px; }
+        .class-card {
+            background: rgba(0,0,0,0.5); border: 2px solid #554d38;
+            padding: 20px; width: 200px; text-align: center;
+            cursor: pointer; transition: all 0.2s;
+        }
+        .class-card:hover, .class-card.selected {
+            border-color: #cba136; background: rgba(203, 161, 54, 0.1); transform: translateY(-5px);
+        }
+        .class-title { font-size: 1.5rem; color: #cba136; margin-bottom: 10px; font-weight: bold; }
+        .class-desc { font-size: 1rem; color: #aaa; }
+
+        /* Shop Grid */
+        .shop-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .shop-item { background: #222; border: 1px solid #554d38; padding: 20px; text-align: center; }
+        .shop-item h3 { color: #d4c7a5; margin: 0 0 10px 0; }
+        .shop-item p { color: #888; font-size: 0.9rem; }
+        .buy-btn { margin-top: 10px; padding: 5px 20px; font-size: 1.2rem; cursor: pointer; background: #444; color: #fff; border: 1px solid #888; }
+        .buy-btn:hover { background: #cba136; color: #000; }
+
+        /* Damage Overlay */
+        #damage-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: radial-gradient(circle, transparent 50%, rgba(150, 0, 0, 0.6) 100%);
+            opacity: 0;
+            transition: opacity 0.2s;
+            pointer-events: none;
+        }
+        /* Parry Flash */
+        #parry-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255, 255, 200, 0.5);
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        #loading { position: absolute; bottom: 10px; right: 10px; color: #555; }
+
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <div id="damage-overlay"></div>
+    <div id="parry-overlay"></div>
+    
+    <div id="ui-layer">
+        <div id="top-bar">
+            <div id="location-display">The Forgotten Crypts</div>
+            <div id="gold-display">Gold: 0</div>
+        </div>
+
+        <div id="message-log"></div>
+        <div id="interaction-prompt">Press E to Exit</div>
+
+        <div id="crosshair"></div>
+
+        <div id="weapon-container">
+            <!-- Sword generated by canvas logic -->
+        </div>
+
+        <div class="hud-bar-container">
+            <div class="bar-wrap"><div class="bar-label">HEALTH</div><div class="bar-fill hp" id="hp-bar"></div></div>
+            <div class="bar-wrap"><div class="bar-label">STAMINA</div><div class="bar-fill stamina" id="st-bar"></div></div>
+        </div>
+
+        <div id="minimap-container">
+            <canvas id="minimap"></canvas>
+        </div>
+    </div>
+
+    <!-- CHARACTER CREATION SCREEN -->
+    <div id="char-screen" class="screen-overlay" style="display: flex;">
+        <h1>Create Character</h1>
+        <div class="class-select">
+            <div class="class-card selected" onclick="selectClass('knight', this)">
+                <div class="class-title">Knight</div>
+                <div class="class-desc">High Health, Strong attacks. Slower movement.</div>
+            </div>
+            <div class="class-card" onclick="selectClass('rogue', this)">
+                <div class="class-title">Rogue</div>
+                <div class="class-desc">Fast movement, High Stamina. Weaker defense.</div>
+            </div>
+            <div class="class-card" onclick="selectClass('spellsword', this)">
+                <div class="class-title">Spellsword</div>
+                <div class="class-desc">Balanced stats. Starts with extra gold.</div>
+            </div>
+        </div>
+        <button class="btn" id="start-btn">Begin Adventure</button>
+    </div>
+
+    <!-- SHOP SCREEN -->
+    <div id="shop-screen" class="screen-overlay">
+        <h2>Village Merchant</h2>
+        <div class="shop-grid">
+            <div class="shop-item">
+                <h3>Health Potion</h3>
+                <p>Restores 50 HP</p>
+                <p>Cost: 30 Gold</p>
+                <button class="buy-btn" onclick="buyItem('potion', 30)">Buy</button>
+            </div>
+            <div class="shop-item">
+                <h3>Elven Blade</h3>
+                <p>Increases Damage</p>
+                <p>Cost: 150 Gold</p>
+                <button class="buy-btn" onclick="buyItem('sword', 150)">Buy</button>
+            </div>
+        </div>
+        <button class="btn" onclick="closeShop()">Leave Shop</button>
+    </div>
+
+    <div id="pause-screen" class="screen-overlay">
+        <h1>Paused</h1>
+        <p>Game paused.</p>
+        <button class="btn" id="resume-btn">Resume</button>
+    </div>
+    
+    <div id="loading">Generates procedural textures...</div>
+</div>
+
+<!-- Three.js CDN -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<!-- PointerLockControls -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
+
+<script>
+/**
+ * DAGGERFALL LITE ENGINE v4.0
+ * Features: Generative Audio System (Altering Music), Drifting Ambience
+ */
+
+// --- AUDIO ENGINE (Generative) ---
+const AudioSys = {
+    ctx: null,
+    bgmNodes: [],
+    musicTimer: null,
+    currentTrack: 'none', // 'dungeon' or 'wilderness'
+    
+    init: function() {
+        if (!this.ctx) {
+            this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        } else if (this.ctx.state === 'suspended') {
+            this.ctx.resume();
+        }
+    },
+
+    stopMusic: function() {
+        this.bgmNodes.forEach(n => {
+            try { n.stop(); n.disconnect(); } catch(e){}
+        });
+        this.bgmNodes = [];
+        if(this.musicTimer) clearTimeout(this.musicTimer);
+        this.currentTrack = 'none';
+    },
+
+    startDungeonMusic: function() {
+        if(this.currentTrack === 'dungeon') return;
+        this.stopMusic();
+        this.currentTrack = 'dungeon';
+        
+        // Create Drifting Drones
+        this.createDriftingDrone(55, 0.02); // Low A
+        this.createDriftingDrone(82.4, 0.015); // E
+        
+        // Generative "Spooky" elements
+        const playCreepy = () => {
+            if(this.currentTrack !== 'dungeon') return;
+            
+            // Occasional metallic scrape or low thud
+            const freq = Math.random() > 0.6 ? 40 + Math.random()*40 : 600 + Math.random()*400;
+            const type = Math.random() > 0.5 ? 'sawtooth' : 'triangle';
+            const dur = 1.0 + Math.random() * 2.0;
+            this.playTone(freq, type, dur, 0.005);
+            
+            const next = 3000 + Math.random() * 5000;
+            this.musicTimer = setTimeout(playCreepy, next);
+        };
+        playCreepy();
+    },
+
+    startWildernessMusic: function() {
+        if(this.currentTrack === 'wilderness') return;
+        this.stopMusic();
+        this.currentTrack = 'wilderness';
+
+        // Low Foundation Pad
+        this.createDriftingDrone(130.81, 0.01, 'sine'); // C3
+
+        // Generative "Wind Chime" Melody
+        // C Major Pentatonic: C D E G A
+        const scale = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25]; 
+        
+        const playNextNote = () => {
+            if(this.currentTrack !== 'wilderness') return;
+            
+            const note = scale[Math.floor(Math.random() * scale.length)];
+            // Chance to shift octave
+            const freq = Math.random() > 0.7 ? note * 2 : note;
+            
+            // Soft sine/triangle pluck with long release
+            this.playTone(freq, 'sine', 4.0, 0.015); 
+            
+            // Schedule next note randomly
+            const nextTime = 1500 + Math.random() * 3500;
+            this.musicTimer = setTimeout(playNextNote, nextTime);
+        };
+        
+        playNextNote();
+    },
+
+    createDriftingDrone: function(freq, vol, type = 'triangle') {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        const pitchLfo = this.ctx.createOscillator();
+        const pitchGain = this.ctx.createGain();
+
+        osc.type = type;
+        osc.frequency.value = freq;
+
+        // Pitch drift LFO (Very slow, subtle)
+        pitchLfo.frequency.value = 0.1 + Math.random() * 0.1; 
+        pitchGain.gain.value = 1.5; // Drift +/- 1.5Hz
+        
+        pitchLfo.connect(pitchGain);
+        pitchGain.connect(osc.frequency);
+
+        // Filter to soften sounds
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.value = 600;
+
+        gain.gain.value = vol;
+        
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.ctx.destination);
+        
+        osc.start();
+        pitchLfo.start();
+        
+        this.bgmNodes.push(osc, pitchLfo);
+    },
+
+    playTone: function(freq, type, duration, vol = 0.1) {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+        
+        // Soft attack and release
+        gain.gain.setValueAtTime(0, this.ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(vol, this.ctx.currentTime + 0.1);
+        gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
+        
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        
+        osc.start();
+        osc.stop(this.ctx.currentTime + duration);
+    },
+
+    playSwing: function() {
+        if (!this.ctx) return;
+        const bufferSize = this.ctx.sampleRate * 0.3;
+        const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+        
+        const noise = this.ctx.createBufferSource();
+        noise.buffer = buffer;
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.setValueAtTime(800, this.ctx.currentTime);
+        filter.frequency.linearRampToValueAtTime(200, this.ctx.currentTime + 0.2);
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0.15, this.ctx.currentTime); 
+        gain.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 0.2);
+        
+        noise.connect(filter); filter.connect(gain); gain.connect(this.ctx.destination);
+        noise.start();
+    },
+
+    playHit: function() {
+        if (!this.ctx) return;
+        this.playTone(80, 'triangle', 0.1, 0.2);
+        
+        const bufferSize = this.ctx.sampleRate * 0.1;
+        const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+        const noise = this.ctx.createBufferSource();
+        noise.buffer = buffer;
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 0.1);
+        noise.connect(gain); gain.connect(this.ctx.destination);
+        noise.start();
+    },
+
+    playBlock: function() { this.playTone(60, 'square', 0.1, 0.15); },
+    playParry: function() {
+        this.playTone(1200, 'sine', 0.8, 0.15);
+        this.playTone(1600, 'sine', 0.6, 0.1);
+        this.playTone(2000, 'sine', 0.4, 0.1);
+    },
+    playInteract: function() {
+        const now = this.ctx.currentTime;
+        [523.25, 659.25, 783.99].forEach((f, i) => {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.frequency.value = f;
+            gain.gain.setValueAtTime(0.04, now + i*0.1);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + i*0.1 + 0.5);
+            osc.connect(gain); gain.connect(this.ctx.destination);
+            osc.start(now + i*0.1); osc.stop(now + i*0.1 + 0.5);
+        });
+    }
+};
+
+// --- ASSET GENERATOR ---
+const AssetGen = {
+    createCanvas: (w, h) => {
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        return c;
+    },
+    noise: (ctx, w, h, intensity = 20) => {
+        const id = ctx.getImageData(0, 0, w, h);
+        const d = id.data;
+        for(let i = 0; i < d.length; i += 4) {
+            const val = (Math.random() * intensity) - (intensity/2);
+            d[i] += val; d[i+1] += val; d[i+2] += val;
+        }
+        ctx.putImageData(id, 0, 0);
+    },
+    generateWall: () => {
+        const s = 512;
+        const c = AssetGen.createCanvas(s, s);
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#3a3a3a'; ctx.fillRect(0, 0, s, s);
+        ctx.fillStyle = '#4a4a4a';
+        const rows = 8; const brickH = s / rows;
+        for(let y = 0; y < rows; y++) {
+            const offset = (y % 2 === 0) ? 0 : 30;
+            const brickW = s / 4;
+            for(let x = -1; x < 6; x++) {
+                ctx.fillStyle = Math.random() > 0.5 ? '#484848' : '#4e4e4e';
+                ctx.fillRect((x * brickW) + offset + 2, y * brickH + 2, brickW - 4, brickH - 4);
+            }
+        }
+        AssetGen.noise(ctx, s, s, 15);
+        return c.toDataURL();
+    },
+    generateFloor: (color = '#222') => {
+        const s = 512;
+        const c = AssetGen.createCanvas(s, s);
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = color; ctx.fillRect(0, 0, s, s);
+        for(let i=0; i<800; i++){
+            ctx.fillStyle = Math.random() > 0.5 ? '#333' : '#1a1a1a';
+            ctx.fillRect(Math.random()*s, Math.random()*s, 4, 4);
+        }
+        AssetGen.noise(ctx, s, s, 10);
+        return c.toDataURL();
+    },
+    generateGrass: () => {
+        const s = 512;
+        const c = AssetGen.createCanvas(s, s);
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#1a331a'; ctx.fillRect(0, 0, s, s);
+        for(let i=0; i<2000; i++){
+            ctx.fillStyle = Math.random() > 0.5 ? '#264d26' : '#122412';
+            ctx.fillRect(Math.random()*s, Math.random()*s, 2, 6);
+        }
+        return c.toDataURL();
+    },
+    generateHumanoid: (tunicColor, skinColor, hasWeapon) => {
+        const s = 256;
+        const c = AssetGen.createCanvas(s, s);
+        const ctx = c.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+        ctx.shadowColor = "black"; ctx.shadowBlur = 4;
+        const cx = s/2;
+        ctx.fillStyle = skinColor; ctx.fillRect(cx-15, 40, 30, 35); // Head
+        ctx.fillStyle = tunicColor; ctx.fillRect(cx-25, 75, 50, 65); // Body
+        ctx.fillStyle = skinColor; ctx.fillRect(cx-40, 80, 15, 40); // L Arm
+        ctx.fillRect(cx+25, 80, 15, 40); // R Arm
+        ctx.fillStyle = '#222'; ctx.fillRect(cx-20, 140, 15, 50); ctx.fillRect(cx+5, 140, 15, 50); // Legs
+        ctx.shadowBlur = 0; ctx.fillStyle = '#000'; ctx.fillRect(cx-8, 50, 6, 6); ctx.fillRect(cx+2, 50, 6, 6); // Eyes
+        if (hasWeapon) {
+            ctx.fillStyle = '#888'; ctx.fillRect(cx+35, 60, 10, 70); // Blade
+            ctx.fillRect(cx+30, 110, 20, 6); // Guard
+            ctx.fillStyle = '#421'; ctx.fillRect(cx+38, 116, 4, 20); // Hilt
+        }
+        return c.toDataURL();
+    },
+    generateHouseTex: () => {
+        const s = 256;
+        const c = AssetGen.createCanvas(s, s);
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#d2b48c'; ctx.fillRect(0,0,s,s); 
+        ctx.fillStyle = '#3e2723'; ctx.fillRect(0,0,20,s); ctx.fillRect(s-20,0,20,s);
+        ctx.fillRect(0,0,s,20); ctx.fillRect(0,s-20,s,20); ctx.fillRect(0, s/2, s, 15); ctx.fillRect(s/2-10, 0, 20, s);
+        AssetGen.noise(ctx, s, s, 10);
+        return c.toDataURL();
+    },
+    generateLadder: () => {
+        const s = 256;
+        const c = AssetGen.createCanvas(s, s);
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#8B4513'; ctx.fillRect(80, 0, 20, 256); ctx.fillRect(156, 0, 20, 256);
+        for(let i=20; i<250; i+=40) ctx.fillRect(80, i, 96, 15);
+        return c.toDataURL();
+    },
+    generateTree: () => {
+        const s = 512;
+        const c = AssetGen.createCanvas(s, s);
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#3e2723'; ctx.fillRect(s/2 - 20, 300, 40, 212);
+        ctx.fillStyle = '#1b5e20';
+        ctx.beginPath(); ctx.arc(s/2, 180, 120, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(s/2 - 80, 220, 80, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(s/2 + 80, 220, 80, 0, Math.PI*2); ctx.fill();
+        return c.toDataURL();
+    },
+    generateSword: () => {
+        const w = 600; const h = 800;
+        const c = AssetGen.createCanvas(w, h);
+        const ctx = c.getContext('2d');
+        ctx.translate(w/2, h - 50);
+        const drawRect = (x, y, rw, rh, style) => { ctx.fillStyle = style; ctx.fillRect(x - rw/2, y, rw, rh); };
+        const bladeGrad = ctx.createLinearGradient(-20, 0, 20, 0);
+        bladeGrad.addColorStop(0, '#666'); bladeGrad.addColorStop(0.5, '#eee'); bladeGrad.addColorStop(1, '#555');
+        ctx.beginPath(); ctx.moveTo(-25, 0); ctx.lineTo(-20, -550); ctx.lineTo(0, -600); ctx.lineTo(20, -550); ctx.lineTo(25, 0); ctx.closePath();
+        ctx.fillStyle = bladeGrad; ctx.fill();
+        drawRect(0, -500, 8, 480, '#333');
+        const goldGrad = ctx.createLinearGradient(-80, 0, 80, 0);
+        goldGrad.addColorStop(0, '#8B4513'); goldGrad.addColorStop(0.5, '#FFD700'); goldGrad.addColorStop(1, '#8B4513');
+        ctx.beginPath(); ctx.moveTo(-80, -20); ctx.quadraticCurveTo(0, 30, 80, -20); ctx.lineTo(80, 10); ctx.quadraticCurveTo(0, 60, -80, 10); ctx.closePath();
+        ctx.fillStyle = goldGrad; ctx.fill();
+        const gripGrad = ctx.createLinearGradient(-15, 0, 15, 0);
+        gripGrad.addColorStop(0, '#221'); gripGrad.addColorStop(0.5, '#432'); gripGrad.addColorStop(1, '#221');
+        drawRect(0, 10, 30, 120, gripGrad);
+        ctx.beginPath(); ctx.arc(0, 140, 30, 0, Math.PI*2); ctx.fillStyle = goldGrad; ctx.fill();
+        return c;
+    }
+};
+
+// --- GAME STATE ---
+const Game = {
+    state: 'MENU',
+    running: false,
+    levelGenerated: false,
+    scene: null,
+    camera: null,
+    renderer: null,
+    controls: null,
+    clock: new THREE.Clock(),
+    entities: [],
+    interactables: [],
+    walls: [],
+    exit: null,
+    map: [],
+    mapSize: 21,
+    cellSize: 15,
+    selectedClass: 'knight',
+    player: {
+        hp: 100, maxHp: 100,
+        stamina: 100, maxStamina: 100,
+        velocity: new THREE.Vector3(),
+        direction: new THREE.Vector3(),
+        speed: 100, 
+        friction: 5.0,
+        radius: 3,
+        attacking: false,
+        blocking: false,
+        blockStartTime: 0,
+        damageMult: 1,
+        level: 1,
+        gold: 0,
+        classType: 'knight'
+    },
+    textures: {}
+};
+
+let selectedClassElement = null;
+
+function selectClass(cls, el) {
+    Game.selectedClass = cls;
+    document.querySelectorAll('.class-card').forEach(c => c.classList.remove('selected'));
+    el.classList.add('selected');
+}
+
+// --- INIT & SETUP ---
+function init() {
+    const tl = new THREE.TextureLoader();
+    Game.textures.wall = tl.load(AssetGen.generateWall()); Game.textures.wall.magFilter = THREE.NearestFilter;
+    Game.textures.floor = tl.load(AssetGen.generateFloor()); Game.textures.floor.magFilter = THREE.NearestFilter;
+    Game.textures.grass = tl.load(AssetGen.generateGrass()); Game.textures.grass.magFilter = THREE.NearestFilter;
+    Game.textures.bandit = tl.load(AssetGen.generateHumanoid('#522', '#dcb', true)); Game.textures.bandit.magFilter = THREE.NearestFilter;
+    Game.textures.orc = tl.load(AssetGen.generateHumanoid('#343', '#686', true)); Game.textures.orc.magFilter = THREE.NearestFilter;
+    Game.textures.villager = tl.load(AssetGen.generateHumanoid('#358', '#dcb', false)); Game.textures.villager.magFilter = THREE.NearestFilter;
+    Game.textures.ladder = tl.load(AssetGen.generateLadder()); Game.textures.ladder.magFilter = THREE.NearestFilter;
+    Game.textures.tree = tl.load(AssetGen.generateTree()); Game.textures.tree.magFilter = THREE.NearestFilter;
+    Game.textures.house = tl.load(AssetGen.generateHouseTex()); Game.textures.house.magFilter = THREE.NearestFilter;
+
+    const wImg = document.createElement('img');
+    wImg.src = AssetGen.generateSword().toDataURL();
+    wImg.id = 'weapon-img';
+    document.getElementById('weapon-container').appendChild(wImg);
+
+    Game.scene = new THREE.Scene();
+    Game.scene.background = new THREE.Color(0x000000);
+    Game.scene.fog = new THREE.FogExp2(0x050505, 0.025);
+
+    Game.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    Game.renderer = new THREE.WebGLRenderer({ antialias: false });
+    Game.renderer.setSize(window.innerWidth, window.innerHeight);
+    Game.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    document.getElementById('game-container').insertBefore(Game.renderer.domElement, document.getElementById('ui-layer'));
+
+    Game.controls = new THREE.PointerLockControls(Game.camera, document.body);
+
+    setupEvents();
+    animate();
+}
+
+function setupEvents() {
+    Game.controls.addEventListener('lock', () => {
+        if(Game.state !== 'SHOP') {
+            Game.running = true;
+            document.getElementById('pause-screen').style.display = 'none';
+        }
+    });
+    Game.controls.addEventListener('unlock', () => {
+        Game.running = false;
+        if (Game.levelGenerated && Game.state !== 'SHOP') document.getElementById('pause-screen').style.display = 'flex';
+    });
+
+    document.addEventListener('click', () => {
+        if (Game.controls.isLocked) attack();
+    });
+    document.addEventListener('mousedown', (e) => {
+        if(e.button === 2 && Game.running) block(true);
+    });
+    document.addEventListener('mouseup', (e) => {
+        if(e.button === 2 && Game.running) block(false);
+    });
+    document.addEventListener('contextmenu', e => e.preventDefault());
+    document.addEventListener('keyup', (e) => {
+        if (e.key.toLowerCase() === 'e') interact();
+    });
+
+    Game.input = { w:false, a:false, s:false, d:false, shift:false };
+    const onKey = (e, v) => {
+        const k = e.key.toLowerCase();
+        if(k==='w') Game.input.w=v; if(k==='a') Game.input.a=v;
+        if(k==='s') Game.input.s=v; if(k==='d') Game.input.d=v;
+        if(e.key==='Shift') Game.input.shift=v;
+    };
+    document.addEventListener('keydown', e => onKey(e, true));
+    document.addEventListener('keyup', e => onKey(e, false));
+
+    document.getElementById('start-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        AudioSys.init();
+        applyClassStats();
+        startGame('DUNGEON');
+    });
+    document.getElementById('resume-btn').addEventListener('click', (e) => {
+        e.stopPropagation();
+        Game.controls.lock();
+    });
+    
+    window.addEventListener('resize', () => {
+        Game.camera.aspect = window.innerWidth / window.innerHeight;
+        Game.camera.updateProjectionMatrix();
+        Game.renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+}
+
+function applyClassStats() {
+    const p = Game.player;
+    const cls = Game.selectedClass;
+    p.classType = cls;
+    if(cls === 'knight') { p.maxHp = 150; p.hp = 150; p.maxStamina = 80; p.stamina = 80; p.speed = 90; } 
+    else if (cls === 'rogue') { p.maxHp = 80; p.hp = 80; p.maxStamina = 150; p.stamina = 150; p.speed = 130; } 
+    else { p.maxHp = 100; p.hp = 100; p.maxStamina = 100; p.stamina = 100; p.speed = 100; p.gold = 100; }
+    updateHud();
+    document.getElementById('char-screen').style.display = 'none';
+}
+
+function startGame(mode) {
+    generateLevel(mode);
+    Game.levelGenerated = true;
+    Game.controls.lock();
+}
+
+// --- LEVEL GENERATION ---
+function generateLevel(mode) {
+    Game.entities = [];
+    Game.interactables = [];
+    Game.walls = [];
+    Game.exit = null;
+    while(Game.scene.children.length > 0) Game.scene.remove(Game.scene.children[0]);
+    Game.scene.add(Game.camera);
+
+    Game.state = mode;
+
+    if (mode === 'DUNGEON') {
+        generateDungeon();
+        document.getElementById('location-display').textContent = "The Forgotten Crypts";
+        AudioSys.startDungeonMusic();
+    } else {
+        generateWilderness();
+        document.getElementById('location-display').textContent = "High Rock Wilderness";
+        AudioSys.startWildernessMusic();
+    }
+}
+
+function generateDungeon() {
+    Game.scene.background = new THREE.Color(0x050505);
+    Game.scene.fog = new THREE.FogExp2(0x050505, 0.035);
+    Game.scene.add(new THREE.AmbientLight(0xffffff, 0.3));
+    Game.scene.add(new THREE.PointLight(0xffaa00, 1, 20));
+
+    const s = Game.mapSize;
+    const map = Array(s).fill(0).map(() => Array(s).fill(1));
+    
+    const carve = (x, y) => {
+        map[y][x] = 0;
+        const dirs = [[0,-2],[0,2],[-2,0],[2,0]].sort(()=>Math.random()-0.5);
+        dirs.forEach(([dx, dy]) => {
+            const nx = x+dx, ny = y+dy;
+            if(nx>0 && nx<s-1 && ny>0 && ny<s-1 && map[ny][nx]===1) {
+                map[y+dy/2][x+dx/2] = 0;
+                carve(nx, ny);
+            }
+        });
+    };
+    carve(1, 1);
+    Game.map = map;
+
+    const geo = new THREE.BoxGeometry(Game.cellSize, Game.cellSize, Game.cellSize);
+    const mat = new THREE.MeshStandardMaterial({ map: Game.textures.wall });
+    const fGeo = new THREE.PlaneGeometry(Game.cellSize, Game.cellSize);
+    const fMat = new THREE.MeshStandardMaterial({ map: Game.textures.floor });
+    const cMat = new THREE.MeshBasicMaterial({ color: 0x1a1a1a });
+
+    for(let y=0; y<s; y++) {
+        for(let x=0; x<s; x++) {
+            const wx = (x - s/2) * Game.cellSize;
+            const wz = (y - s/2) * Game.cellSize;
+            if(map[y][x] === 1) {
+                const m = new THREE.Mesh(geo, mat); m.position.set(wx, Game.cellSize/2, wz); Game.scene.add(m); Game.walls.push({x:wx, z:wz, s:Game.cellSize});
+            } else {
+                const fl = new THREE.Mesh(fGeo, fMat); fl.rotation.x = -Math.PI/2; fl.position.set(wx, 0, wz); Game.scene.add(fl);
+                const cl = new THREE.Mesh(fGeo, cMat); cl.rotation.x = Math.PI/2; cl.position.set(wx, Game.cellSize, wz); Game.scene.add(cl);
+                if(Math.random() < 0.08 && x > 4) spawnEnemy(wx, wz);
+            }
+        }
+    }
+    const endX = (s - 2) * Game.cellSize - (s/2 * Game.cellSize);
+    const endZ = (s - 2) * Game.cellSize - (s/2 * Game.cellSize);
+    const exitSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: Game.textures.ladder, color: 0xffffff }));
+    exitSprite.scale.set(8, 15, 1); exitSprite.position.set(endX, 7.5, endZ); Game.scene.add(exitSprite);
+    Game.exit = { position: exitSprite.position, type: 'ladder' };
+    Game.camera.position.set((1-s/2)*Game.cellSize, 6, (1-s/2)*Game.cellSize);
+    Game.player.velocity.set(0,0,0);
+}
+
+function generateWilderness() {
+    Game.scene.background = new THREE.Color(0x87CEEB);
+    Game.scene.fog = new THREE.FogExp2(0x87CEEB, 0.01);
+    Game.scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    const sun = new THREE.DirectionalLight(0xffffff, 0.8);
+    sun.position.set(100, 100, 50);
+    Game.scene.add(sun);
+
+    const gGeo = new THREE.PlaneGeometry(600, 600);
+    const gMat = new THREE.MeshStandardMaterial({ map: Game.textures.grass });
+    gMat.map.wrapS = THREE.RepeatWrapping; gMat.map.wrapT = THREE.RepeatWrapping;
+    gMat.map.repeat.set(30, 30);
+    const ground = new THREE.Mesh(gGeo, gMat);
+    ground.rotation.x = -Math.PI/2;
+    Game.scene.add(ground);
+
+    for(let i=0; i<80; i++) {
+        const x = (Math.random() - 0.5) * 500; const z = (Math.random() - 0.5) * 500;
+        if(Math.abs(x) < 50 && Math.abs(z) < 50) continue;
+        const tree = new THREE.Sprite(new THREE.SpriteMaterial({ map: Game.textures.tree }));
+        tree.scale.set(20, 30, 1); tree.position.set(x, 15, z); Game.scene.add(tree); Game.walls.push({x:x, z:z, s:5});
+    }
+    const housePos = [{x: 30, z: 30}, {x: -30, z: 30}, {x: 30, z: -30}, {x: -30, z: -30}];
+    const houseGeo = new THREE.BoxGeometry(20, 20, 20);
+    const houseMat = new THREE.MeshStandardMaterial({ map: Game.textures.house });
+    housePos.forEach(pos => {
+        const h = new THREE.Mesh(houseGeo, houseMat); h.position.set(pos.x, 10, pos.z); Game.scene.add(h); Game.walls.push({x: pos.x, z: pos.z, s: 22});
+        spawnNPC(pos.x + (Math.random()-0.5)*15, pos.z + (Math.random()-0.5)*15, 'villager');
+    });
+    spawnNPC(0, 20, 'merchant');
+    for(let i=0; i<15; i++) {
+        const x = (Math.random()-0.5)*500; const z = (Math.random()-0.5)*500;
+        if (Math.abs(x) > 60 || Math.abs(z) > 60) spawnEnemy(x, z);
+    }
+    Game.camera.position.set(0, 6, 0);
+    Game.player.velocity.set(0,0,0);
+}
+
+function spawnEnemy(x, z) {
+    const type = Math.random() > 0.5 ? 'bandit' : 'orc';
+    const mat = new THREE.SpriteMaterial({ map: Game.textures[type] });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(8, 10, 1); sprite.position.set(x, 5, z); Game.scene.add(sprite);
+    Game.entities.push({
+        mesh: sprite, hp: 40 + (Game.player.level * 5), damage: 12, speed: 18, attackTimer: 0, stunTimer: 0, type: 'hostile'
+    });
+}
+
+function spawnNPC(x, z, role) {
+    const mat = new THREE.SpriteMaterial({ map: Game.textures.villager, color: role==='merchant' ? 0xffddaa : 0xffffff });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(7, 9, 1); sprite.position.set(x, 4.5, z); Game.scene.add(sprite);
+    Game.interactables.push({
+        mesh: sprite, type: 'npc', role: role, name: role === 'merchant' ? "Merchant" : "Villager"
+    });
+}
+
+// --- PHYSICS & LOGIC ---
+function updatePhysics(delta) {
+    const p = Game.player;
+    p.velocity.x -= p.velocity.x * p.friction * delta;
+    p.velocity.z -= p.velocity.z * p.friction * delta;
+
+    if(Game.controls.isLocked) {
+        const speed = (Game.input.shift && p.stamina > 0) ? p.speed * 1.8 : p.speed;
+        if(Game.input.shift && (Game.input.w || Game.input.a || Game.input.s || Game.input.d)) p.stamina -= 15 * delta;
+        const dir = new THREE.Vector3();
+        dir.z = Number(Game.input.w) - Number(Game.input.s);
+        dir.x = Number(Game.input.d) - Number(Game.input.a);
+        dir.normalize();
+        if(dir.lengthSq() > 0) p.velocity.add(dir.multiplyScalar(speed * p.friction * delta)); 
+    }
+    const moveX = p.velocity.x * delta; const moveZ = p.velocity.z * delta;
+    Game.controls.moveRight(moveX);
+    if(checkCollision(Game.camera.position)) { Game.controls.moveRight(-moveX); p.velocity.x = 0; }
+    Game.controls.moveForward(moveZ);
+    if(checkCollision(Game.camera.position)) { Game.controls.moveForward(-moveZ); p.velocity.z = 0; }
+
+    if(Game.controls.isLocked && (Game.input.w || Game.input.a || Game.input.s || Game.input.d)) {
+        const time = Date.now() * 0.005; Game.camera.position.y = 6 + Math.sin(time) * 0.15;
+    }
+}
+
+function checkCollision(pos) {
+    const r = Game.player.radius;
+    for(let w of Game.walls) {
+        if (pos.x > w.x - w.s/2 - r && pos.x < w.x + w.s/2 + r && pos.z > w.z - w.s/2 - r && pos.z < w.z + w.s/2 + r) return true;
+    }
+    return false;
+}
+
+function interact() {
+    if (Game.exit && Game.state === 'DUNGEON') {
+        if (Game.camera.position.distanceTo(Game.exit.position) < 10) {
+            AudioSys.playInteract();
+            log("Escaped to Wilderness!");
+            startGame('WILDERNESS');
+            return;
+        }
+    }
+    const pPos = Game.camera.position;
+    const npc = Game.interactables.find(i => i.mesh.position.distanceTo(pPos) < 8);
+    if(npc) {
+        AudioSys.playInteract();
+        if(npc.role === 'merchant') openShop();
+        else log("Villager: 'Stay safe, traveler.'");
+    }
+}
+
+// --- COMBAT ---
+function attack() {
+    if(Game.player.attacking || Game.player.blocking || Game.player.stamina < 15) return;
+    Game.player.attacking = true;
+    Game.player.stamina -= 15;
+    AudioSys.playSwing();
+    const w = document.getElementById('weapon-container');
+    w.style.transform = 'rotate(60deg) translateY(100px) translateX(150px)'; 
+    setTimeout(() => { w.style.transform = 'rotate(0deg)'; Game.player.attacking = false; }, 200);
+
+    const rc = new THREE.Raycaster();
+    rc.setFromCamera(new THREE.Vector2(), Game.camera);
+    const hits = rc.intersectObjects(Game.entities.map(e=>e.mesh));
+    if(hits.length > 0 && hits[0].distance < 15) {
+        const ent = Game.entities.find(e=>e.mesh === hits[0].object);
+        if(ent) damageEntity(ent, 20 * Game.player.damageMult);
+    }
+}
+
+function block(active) {
+    const w = document.getElementById('weapon-container');
+    Game.player.blocking = active;
+    if(active) {
+        AudioSys.playBlock();
+        Game.player.blockStartTime = Date.now();
+        w.style.transform = 'rotate(-20deg) translateX(-50px) translateY(-30px)';
+    } else {
+        w.style.transform = 'rotate(0deg)';
+    }
+}
+
+function performParryVisuals() {
+    const w = document.getElementById('weapon-container');
+    // Rapid recoil for parry
+    w.style.transform = 'rotate(-45deg) translateX(-50px) translateY(50px) scale(1.1)';
+    setTimeout(() => {
+        // Return to block state if still holding block, else normal
+        if(Game.player.blocking) w.style.transform = 'rotate(-20deg) translateX(-50px) translateY(-30px)';
+        else w.style.transform = 'rotate(0deg)';
+    }, 200);
+}
+
+function damageEntity(ent, amt) {
+    AudioSys.playHit();
+    ent.hp -= amt;
+    ent.mesh.material.color.setHex(0xff0000);
+    setTimeout(()=>ent.mesh.material.color.setHex(0xffffff), 100);
+    if(ent.hp <= 0) {
+        Game.scene.remove(ent.mesh);
+        Game.entities = Game.entities.filter(e=>e!==ent);
+        Game.player.gold += Math.floor(Math.random()*20)+5;
+        document.getElementById('gold-display').innerText = `Gold: ${Game.player.gold}`;
+        log("Enemy defeated.");
+    }
+}
+
+function updateHud() {
+    const p = Game.player;
+    document.getElementById('hp-bar').style.width = Math.max(0, (p.hp/p.maxHp*100))+'%';
+    document.getElementById('st-bar').style.width = Math.max(0, (p.stamina/p.maxStamina*100))+'%';
+    const prompt = document.getElementById('interaction-prompt');
+    let show = false;
+    if(Game.exit && Game.camera.position.distanceTo(Game.exit.position) < 10) {
+        prompt.innerText = "Press E to Exit"; show = true;
+    } else {
+        const npc = Game.interactables.find(i => i.mesh.position.distanceTo(Game.camera.position) < 8);
+        if(npc) { prompt.innerText = npc.role === 'merchant' ? "Press E to Trade" : "Press E to Talk"; show = true; }
+    }
+    prompt.style.display = show ? 'block' : 'none';
+}
+
+function updateMinimap() {
+    const c = document.getElementById('minimap');
+    const ctx = c.getContext('2d');
+    
+    // Clear
+    ctx.fillStyle = '#000'; ctx.fillRect(0,0,c.width,c.height);
+
+    // Calculate relative coordinates
+    const playerX = Game.camera.position.x;
+    const playerZ = Game.camera.position.z;
+    const cs = Game.cellSize;
+    const range = 6; // How many cells to show in each direction
+    
+    // Center of canvas
+    const cx = c.width/2;
+    const cy = c.height/2;
+    const tileW = c.width / (range * 2 + 1);
+    
+    // Draw Map (Relative to player)
+    // Simple approach: Just draw the full map scaled to fit for now, but add arrow
+    // Or stick to the full map view used before:
+    
+    if (Game.state === 'DUNGEON') {
+        const map = Game.map;
+        const scale = c.width / map.length; // Fit to screen
+        
+        // Draw Walls
+        ctx.fillStyle = '#554d38'; 
+        for(let y=0; y<map.length; y++){
+            for(let x=0; x<map[y].length; x++){
+                if(map[y][x] === 0) ctx.fillRect(x*scale, y*scale, scale, scale);
+            }
+        }
+        
+        // Calculate Player Pos on Map
+        const pGridX = (playerX / cs) + (map.length/2);
+        const pGridY = (playerZ / cs) + (map.length/2);
+        
+        // Draw Arrow
+        ctx.save();
+        ctx.translate(pGridX * scale, pGridY * scale);
+        // Game rotation: 0 is -Z (North). 
+        // Canvas rotation: 0 is +X (Right).
+        // We need to align them. 
+        const camRot = Game.camera.rotation.y; // Radians
+        ctx.rotate(-camRot + Math.PI); // Adjust rotation
+        
+        ctx.fillStyle = '#ffd700';
+        ctx.beginPath();
+        ctx.moveTo(0, -6); // Tip
+        ctx.lineTo(4, 4);
+        ctx.lineTo(0, 2);
+        ctx.lineTo(-4, 4);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+        
+    } else {
+        // Wilderness Map (Green box)
+        ctx.fillStyle = '#228B22'; ctx.fillRect(0,0,c.width,c.height);
+        
+        // Arrow in center
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(-Game.camera.rotation.y + Math.PI);
+        ctx.fillStyle = '#ffd700';
+        ctx.beginPath(); ctx.moveTo(0, -8); ctx.lineTo(6, 6); ctx.lineTo(0, 3); ctx.lineTo(-6, 6); ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+    }
+}
+
+// --- SHOP SYSTEM ---
+function openShop() {
+    Game.state = 'SHOP';
+    document.getElementById('shop-screen').style.display = 'flex';
+    document.getElementById('pause-screen').style.display = 'none';
+    Game.controls.unlock();
+}
+function closeShop() {
+    Game.state = 'WILDERNESS';
+    document.getElementById('shop-screen').style.display = 'none';
+    Game.controls.lock();
+}
+window.buyItem = function(item, cost) {
+    if(Game.player.gold >= cost) {
+        AudioSys.playInteract();
+        Game.player.gold -= cost;
+        document.getElementById('gold-display').innerText = `Gold: ${Game.player.gold}`;
+        if(item === 'potion') {
+            Game.player.hp = Math.min(Game.player.hp + 50, Game.player.maxHp);
+            log("Purchased Health Potion.");
+        } else if (item === 'sword') {
+            Game.player.damageMult = 1.5;
+            log("Purchased Elven Blade (Damage Up).");
+        }
+        updateHud();
+    } else {
+        log("Not enough gold!");
+    }
+};
+window.closeShop = closeShop;
+
+function log(msg) {
+    const el = document.getElementById('message-log');
+    const d = document.createElement('div');
+    d.className = 'log-entry'; 
+    if(msg.includes("PARRY")) d.innerHTML = `<span class="parry-text">${msg}</span>`;
+    else d.innerText = msg;
+    el.prepend(d);
+    if(el.children.length > 5) el.lastChild.remove();
+}
+
+// --- GAME LOOP ---
+function animate() {
+    requestAnimationFrame(animate);
+    if(!Game.running) return;
+    
+    const delta = Math.min(Game.clock.getDelta(), 0.1);
+
+    if(Game.player.stamina < Game.player.maxStamina) Game.player.stamina += 8 * delta;
+    updatePhysics(delta);
+    updateHud();
+    updateMinimap(); // Updates every frame
+
+    const pPos = Game.camera.position;
+    
+    // Update Entities
+    Game.entities.forEach(e => {
+        if(e.stunTimer > 0) {
+            e.stunTimer -= delta;
+            return; // Stunned
+        }
+        const dist = e.mesh.position.distanceTo(pPos);
+        if(dist < 40) {
+            const dir = new THREE.Vector3().subVectors(pPos, e.mesh.position).normalize();
+            dir.y = 0;
+            if (dist > 3.5) e.mesh.position.add(dir.multiplyScalar(e.speed * delta));
+
+            if(dist < 4.5 && e.attackTimer <= 0) {
+                let dmg = e.damage;
+                let parried = false;
+                if(Game.player.blocking) {
+                    const blockDuration = Date.now() - Game.player.blockStartTime;
+                    if (blockDuration < 400) { // Extended window to 400ms
+                        parried = true;
+                        dmg = 0;
+                        e.stunTimer = 2.0; 
+                        AudioSys.playParry();
+                        performParryVisuals(); // NEW ANIMATION
+                        log(">> PERFECT PARRY! <<");
+                        const po = document.getElementById('parry-overlay');
+                        po.style.opacity = 1; setTimeout(() => po.style.opacity = 0, 200);
+                    } else {
+                        AudioSys.playBlock();
+                        dmg = Math.floor(dmg / 4);
+                    }
+                }
+                if(!parried) {
+                    if (dmg > 0) AudioSys.playHit();
+                    Game.player.hp -= dmg;
+                    const ov = document.getElementById('damage-overlay');
+                    ov.style.opacity = 0.8; setTimeout(()=>ov.style.opacity=0, 200);
+                    if(Game.player.hp <= 0) {
+                        Game.running = false; Game.controls.unlock();
+                        alert("You have died."); location.reload();
+                    }
+                }
+                e.attackTimer = 2.0;
+            }
+        }
+        if(e.attackTimer > 0) e.attackTimer -= delta;
+    });
+
+    Game.renderer.render(Game.scene, Game.camera);
+}
+
+init();
+
+</script>
+</body>
+</html>
